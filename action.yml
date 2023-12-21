@@ -1,0 +1,132 @@
+name: Qwik Build
+description: GitHub Action to build your Qwik[City] static site for GitHub Pages.
+author: Daniel Bayley
+branding:
+  icon: zap
+  color: purple
+
+inputs:
+  access-token:
+    description: Provide a token with permission to automatically enable Pages.
+      Generate an access token, then add to your repository secrets.
+    required: false
+
+  branch:
+    description: Optionally specify a particular branch of your repo.
+    required: false
+    default: ${{ github.ref_name }}
+
+  working-dir:
+    description: Optionally specify a subfolder containing source files.
+    required: false
+    default: ${{ github.workspace }}
+
+  # https://qwik.builder.io/docs/advanced/custom-build-dir
+  build-dir:
+    description: Optionally specify an alternative build folder.
+    required: false
+    default: dist
+
+  node-version-file:
+    description: Optionally specify a file containing the correct version of Node.
+    required: false
+    default: package.json
+
+  node-version:
+    description: Optionally specify a SemVer range or particular version of Node.js.
+    required: false
+
+runs:
+  using: composite
+  steps:
+  - if: hashFiles(github.workspace) == ''
+    uses: actions/checkout@v4
+    with:
+      ref: ${{ inputs.branch }}
+
+  # https://github.com/lerepo/workspace-tools/tree/master/packages/detect-pm-cli#readme
+  - id: detect-pm
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: npx @lerepo/detect-pm-cli --json | yq '"package-manager=" + .name' >> $GITHUB_OUTPUT
+
+  # https://github.com/pnpm/pnpm/pull/1799
+  - if: hashFiles('package.y*ml') != ''
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: echo NODE_VERSION_FILE=package.yaml >> $GITHUB_ENV
+
+  # https://github.com/actions/setup-node/blob/main/docs/advanced-usage.md
+  - uses: actions/setup-node@v4
+    with:
+      node-version-file: ${{ inputs.working-dir }}/${{ env.NODE_VERSION_FILE || inputs.node-version-file }}
+      node-version: ${{ inputs.node-version }}
+      cache: ${{ steps.detect-pm.outputs.package-manager }}
+      cache-dependency-path: |
+        ${{ inputs.working-dir }}/package-lock.json
+        ${{ inputs.working-dir }}/npm-shrinkwrap.json
+        ${{ inputs.working-dir }}/pnpm-lock.yaml
+        ${{ inputs.working-dir }}/yarn.lock
+
+  - if: steps.detect-pm.outputs.package-manager == 'pnpm'
+    id: pnpm
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: | # https://nodejs.org/api/corepack.html#corepack
+      corepack enable
+      pnpm install --frozen-lockfile
+
+  - if: steps.detect-pm.outputs.package-manager == 'yarn'
+    id: yarn
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: yarn install --immutable
+
+  - if: steps.${{ steps.detect-pm.outputs.package-manager }}.outcome == 'skipped'
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: npm ci
+
+  # https://qwik.builder.io/docs/guides/static-site-generation
+  - if: hashFiles('adapters/static') == ''
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: echo '\r' | ${{ steps.detect-pm.outputs.package-manager }} run qwik add static
+
+  - working-directory: ${{ inputs.working-dir }}
+    shell: bash
+    run: >
+      shopt -s nullglob;
+      ${{ steps.detect-pm.outputs.package-manager }} run
+      $(yq '[.scripts[] | select(. == "*qwik build") | key][0] // "qwik build"'
+      package.{y*ml,json} --output-format yaml)
+
+  - if: inputs.build-dir != 'dist'
+    working-directory: ${{ inputs.working-dir }}
+    shell: sh
+    run: mv dist ${{ inputs.build-dir }}
+
+  # https://docs.github.com/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages#configuring-the-configure-pages-action
+  - if: inputs.access-token != ''
+    uses: actions/configure-pages@v4
+    with:
+      token: ${{ inputs.access-token }}
+      enablement: true
+
+  # https://docs.github.com/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages#configuring-the-upload-pages-artifact-action
+  - uses: actions/upload-pages-artifact@v2
+    with:
+      path: ${{ inputs.working-dir }}/${{ inputs.build-dir }}
+
+  # https://docs.github.com/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages#deploying-github-pages-artifacts
+  - id: deploy
+    uses: actions/deploy-pages@v3
+
+outputs:
+  package-manager:
+    description: Detected package manager.
+    value: ${{ steps.detect-pm.outputs.package-manager }}
+
+  page-url:
+    description: Pages site URL.
+    value: ${{ steps.deploy.outputs.page_url }}
