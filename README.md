@@ -6,6 +6,11 @@ GitHub [Action] to `build` your Qwik[[_City_]] [static] site for GitHub [Pages].
 
 Usage
 -----
+First enable GitHub Pages under your repository `Settings` > `Pages`
+by changing the source to `GitHub Actions`:
+
+![screenshot](screenshot.png)
+
 This action will look in [`package.`][[`yaml`]/`json`] [`scripts`] for the first script
 containing a `qwik`[`build`] command and [`run`] it with [[`p`]]`npm` or [`yarn`], as [appropriate]:
 ~~~ js
