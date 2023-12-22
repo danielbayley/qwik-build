@@ -1,0 +1,45 @@
+name: CI
+on:
+  workflow_dispatch:
+  push:
+    branches: main
+    paths: '**.y*ml'
+
+permissions:
+  contents: write
+  pages:    write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.build.outputs.page-url }}
+
+    steps:
+    - name: Configure git
+      uses: Homebrew/actions/git-user-config@master
+
+    - name: Regenerate Pages source
+      run: |
+        npm create qwik@latest basic site
+        npm install --package-lock-only --prefix site
+        git init --initial-branch ci
+        git add site
+        git commit --allow-empty-message --message= #$GITHUB_JOB
+        git remote add origin https://${{ secrets.ACCESS_TOKEN }}@github.com/$GITHUB_REPOSITORY
+        git push --force --set-upstream origin ci
+
+    - name: Test Qwik Build ${{ github.job }}
+      id: build
+      uses: danielbayley/qwik-build@main
+      with:
+        access-token: ${{ secrets.ACCESS_TOKEN }}
+        branch: ci
+        working-dir: site
+        build-dir: build
