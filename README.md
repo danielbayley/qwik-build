@@ -37,7 +37,7 @@ devDependencies:
   "@builder.io/qwik": ^1.x
   "@danielx/civet": ^0.x
 scripts:
-  prebuild: civet --compile */*.civet --output .tsx
+  prebuild: civet --compile src/**/*.civet --output .tsx
   build: qwik build # pnpm run build
 ~~~
 Although a more official [integration] is preferred.
@@ -79,7 +79,7 @@ jobs:
     steps:
     - name: Qwik Build
       id: qwik-build
-      uses: danielbayley/qwik-build@main
+      uses: danielbayley/qwik-build@v1
       with:
         branch: site
 ~~~
